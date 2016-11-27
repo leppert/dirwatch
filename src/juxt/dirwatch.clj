@@ -13,26 +13,32 @@
       :author "Malcolm Sparks"
       :requires "JDK7"}
   juxt.dirwatch
-  (:import (java.io File)
-           (java.nio.file FileSystems StandardWatchEventKinds WatchService Path)
+  (:require [juxt.default-os]
+            [juxt.mac-os])
+  (:import (java.nio.file StandardWatchEventKinds)
            (java.util.concurrent TimeUnit)))
+
+(def mac?
+  (= "Mac OS X" (System/getProperty "os.name")))
+
+(alias 'os (if mac? 'juxt.mac-os 'juxt.default-os))
 
 ;; TODO: Implement a version that uses polling to emulate this functionality on JDK6 and below.
 
-(defn ^:private register-path
+(defn- register-path
   "Register a watch service with a filesystem path.
 
   When collect-children? is set, returns a list of artificial events for files seen during recursion"
-  [^WatchService ws, ^Path path & [event-atom]]
+  [ws, path & [event-atom]]
   (.register path ws
              (into-array
               (type StandardWatchEventKinds/ENTRY_CREATE)
               [StandardWatchEventKinds/ENTRY_CREATE
                StandardWatchEventKinds/ENTRY_DELETE
                StandardWatchEventKinds/ENTRY_MODIFY]))
-  (doseq [dir (.. path toAbsolutePath toFile listFiles)]
+  (doseq [dir (os/list-files path)]
     (when (. dir isDirectory)
-          (register-path ws (. dir toPath) event-atom))
+          (register-path ws (os/prep-file dir) event-atom))
     (when event-atom
           (swap! event-atom conj {:file dir, :count 1, :action :create}))))
 
@@ -45,7 +51,7 @@
       (when (and k (.isValid k))
         (doseq [ev (.pollEvents k) :when (not= (.kind ev)
                                                StandardWatchEventKinds/OVERFLOW)]
-          (let [file (.toFile (.resolve (.watchable k) (.context ev)))]
+          (let [file (os/watchkey->file k ev)]
             (f {:file file
                 :count (.count ev)
                 :action (get {StandardWatchEventKinds/ENTRY_CREATE :create
@@ -55,7 +61,7 @@
             (when (and (= (.kind ev) StandardWatchEventKinds/ENTRY_CREATE)
                        (.isDirectory file))
               (let [artificial-events (atom (list))]
-                (register-path ws (.toPath file) artificial-events)
+                (register-path ws (os/prep-file file) artificial-events)
                 (doseq [event @artificial-events]
                   (f event))))))
         ;; Cancel a key if the reset fails, this may indicate the path no longer exists
@@ -86,9 +92,9 @@
   systems. The watcher returned by this function is a resource which
   should be closed with close-watcher."
   [f & files]
-  (let [ws (.newWatchService (FileSystems/getDefault))
+  (let [ws (os/new-watch-service)
         f (continue-on-exception f)]
-    (doseq [file files :when (.exists file)] (register-path ws (. file toPath)))
+    (doseq [file files :when (.exists file)] (register-path ws (os/prep-file file)))
     (send-off (agent ws
                      :meta {::watcher true}
                      :error-handler (fn [ag ex]

@@ -39,9 +39,9 @@
         (await ag)
         (await-for 2000 ag) ;; Sometimes an extra call to await-for is
                             ;; needed to receive all events.
-        (is (= (count (log)) 3))
+        (is (= 3 (count (log))))
         (is (every? map? (log)))
-        (is (= (map :action (log)) [:create :modify :delete])))
+        (is (= [:create :modify :delete] (mapv :action (log)))))
       (finally (delete-file dir)))))
 
 (deftest cannot-mistakenly-call-close-in-another-agent
@@ -82,6 +82,6 @@
 
       (is (= 2 (count (log)))) ;; In the first event an exception was thrown
       (is (every? map? (log)))
-      (is (= (map :action (log)) [:modify :delete]))
+      (is (= [:modify :delete] (mapv :action (log))))
       (finally (close-watcher watcher)
                (delete-file dir)))))

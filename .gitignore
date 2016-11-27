@@ -12,3 +12,4 @@ pom.xml
 /tmp
 /.lein-repl-history
 /pom.xml.asc
+/.nrepl-port
